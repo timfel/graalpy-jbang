@@ -9,6 +9,7 @@ import java.nio.file.Paths;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -19,6 +20,7 @@ import java.util.stream.Collectors;
 
 public class JBangIntegration {
     private static final String PIP = "//PIP";
+    private static final String PIP_DROP = "//PIP_DROP";
     private static final String PYTHON_LANGUAGE = "python-language";
     private static final String PYTHON_RESOURCES = "python-resources";
     private static final String PYTHON_LAUNCHER = "python-launcher";
@@ -56,19 +58,47 @@ public class JBangIntegration {
             throw new Error(e);
         }
 
-        // include python stdlib
-        runGraalPy(dependencies, "-c", String.format("__import__('shutil').copytree(__graalpython__.home, '%s', dirs_exist_ok=True)", home.toAbsolutePath().toString()));
-
         for (String comment : comments) {
             if (comment.startsWith(PIP)) {
                 ensureVenv(venv, dependencies);
                 runPip(venv, "install", comment.substring(PIP.length()).trim());
             }
         }
+        var dropFolders = new ArrayList<String>();
+        dropFolders.add("pip");
+        dropFolders.add("setuptools");
+        for (String comment : comments) {
+            if (comment.startsWith(PIP_DROP)) {
+                dropFolders.add(comment.substring(PIP_DROP.length()).trim());
+            }
+        }
+        if (Files.exists(venv)) {
+            try {
+                Path libFolder = Files.list(venv.resolve("lib"))
+                    .filter(p -> p.getFileName().toString().startsWith("python3"))
+                    .findFirst().get();
+                if (libFolder != null) {
+                    for (var s : dropFolders) {
+                        var folder = libFolder.resolve("site-packages").resolve(s);
+                        if (Files.exists(folder)) {
+                            try (var f = Files.walk(folder)) {
+                                f.sorted(Comparator.reverseOrder())
+                                    .map(Path::toFile)
+                                    .forEach(File::delete);
+                            }
+                        }
+                    }
+                }
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
 
         generateFilelist(vfs);
 
         if (nativeImage) {
+            // include python stdlib in image
+            runGraalPy(dependencies, "-c", String.format("__import__('shutil').copytree(__graalpython__.home, '%s', dirs_exist_ok=True)", home.toAbsolutePath().toString()));
             var niConfig = temporaryJar.resolve("META-INF").resolve("native-image");
             try {
                 Files.createDirectories(niConfig);
@@ -213,7 +243,6 @@ public class JBangIntegration {
         cmd.addAll(List.of(args));
         System.out.println(String.join(" ", cmd));
         var pb = new ProcessBuilder(cmd);
-        pb.inheritIO();
         try {
             pb.start().waitFor();
         } catch (IOException | InterruptedException e) {
@@ -236,7 +265,6 @@ public class JBangIntegration {
         cmd.addAll(args);
         System.out.println(String.join(" ", cmd));
         var pb = new ProcessBuilder(cmd);
-        pb.inheritIO();
         try {
             pb.start().waitFor();
         } catch (IOException | InterruptedException e) {
@@ -259,7 +287,6 @@ public class JBangIntegration {
             pb.directory(new File(workdir));
         }
         System.out.println(String.format("Running GraalPy: %s", String.join(" ", cmd)));
-        pb.inheritIO();
         try {
             pb.start().waitFor();
         } catch (IOException | InterruptedException e) {

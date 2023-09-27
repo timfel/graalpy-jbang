@@ -16,7 +16,7 @@ public class GraalPy {
 
     public static Context getContext() {
         VirtualFileSystem vfs = new VirtualFileSystem();
-        Context context = Context.newBuilder()
+        var builder = Context.newBuilder()
             // set true to allow experimental options
             .allowExperimentalOptions(false)
             // deny all privileges unless configured below
@@ -48,13 +48,14 @@ public class GraalPy {
             .option("python.ForceImportSite", "true")
             // The sys.executable path, a virtual path that is used by the interpreter to discover packages
             .option("python.Executable", vfs.resourcePathToPlatformPath(VENV_PREFIX) + (VirtualFileSystem.isWindows() ? "\\Scripts\\python.exe" : "/bin/python"))
-            // Set the python home to be read from the embedded resources
-            .option("python.PythonHome", vfs.resourcePathToPlatformPath(HOME_PREFIX))
             // Do not warn if running without JIT. This can be desirable for short running scripts
             // to reduce memory footprint.
-            .option("engine.WarnInterpreterOnly", "false")
-            .build();
-        return context;
+            .option("engine.WarnInterpreterOnly", "false");
+        if (System.getProperty("org.graalvm.nativeimage.imagecode") != null) {
+            // Set the python home to be read from the embedded resources
+            builder.option("python.PythonHome", vfs.resourcePathToPlatformPath(HOME_PREFIX));
+        }
+        return builder.build();
     }
 
     public static void main(String[] args) {
