@@ -94,8 +94,6 @@ public class JBangIntegration {
             }
         }
 
-        generateFilelist(vfs);
-
         if (nativeImage) {
             // include python stdlib in image
             runGraalPy(dependencies, "-c", String.format("__import__('shutil').copytree(__graalpython__.home, '%s', dirs_exist_ok=True)", home.toAbsolutePath().toString()));
@@ -116,6 +114,8 @@ public class JBangIntegration {
                 throw new RuntimeException(e);
             }
         }
+
+        generateFilelist(vfs);
 
         return new HashMap<>();
     }
